@@ -1,0 +1,22 @@
+BESS HarmonyOS 0.2.1 / versionCode 3
+Bundle ID: com.bess.salestrainer
+Target API: HarmonyOS 6.0.0 API 20
+
+Release certificate SHA-256:
+EB:95:8A:3B:9E:9B:C5:7C:77:25:18:FF:DD:FF:F6:A3:63:20:4C:52:2C:5B:3D:A1:55:B5:AC:16:0F:AF:51:38
+
+HAP SHA-256:
+4e45947f0f6870f28f4b2517c2b177948ef321d9e18ad290fc774422861fd6e0
+
+APP SHA-256:
+f4e3e502926f5401f1ea6562b01decc902da2a2381b53eb6e040569de09e029b
+
+Verification:
+- HAP: verify-app success; codesign success; release Profile; SHA-256 digest verified.
+- APP: verify-app success; SHA-256 digest verified.
+- Profile: verify-profile success; type=release; bundle-name=com.bess.salestrainer.
+
+Acceptance boundary:
+Signature structure, identifiers, version and digests are verified. Core API 20 emulator paths
+passed smoke testing. Full Android screenshot-diff coverage, HarmonyOS physical-device compatibility
+and AppGallery distribution are not claimed here.

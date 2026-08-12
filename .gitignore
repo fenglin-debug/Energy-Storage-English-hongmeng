@@ -1,0 +1,31 @@
+# DevEco / Hvigor
+.hvigor/
+.idea/
+.preview/
+.workbuddy/
+.clangd
+.clang-format
+.clang-tidy
+local.properties
+
+# Build outputs
+build/
+**/build/
+oh_modules/
+**/oh_modules/
+artifacts/
+
+# Signing material — never commit
+signing-config.json5
+build-profile.json5.local-signed.bak
+build-profile.json5.debug-backup
+*.p12
+*.cer
+*.p7b
+*.profile
+material/
+
+# OS / editor
+Thumbs.db
+.DS_Store
+*.log

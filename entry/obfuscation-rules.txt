@@ -1,0 +1,14 @@
+-keep-global-name
+-keep-file-name
+-keep-property-name formatVersion
+-keep-property-name createdAtEpochMs
+-keep-property-name wordMemoryStates
+-keep-property-name reviewLogs
+-keep-property-name vocabularyCheckpoints
+-keep-property-name reviewActionKeys
+-keep-property-name scenarioSessions
+-keep-property-name scenarioTurnProgress
+-keep-property-name studyTasks
+-keep-property-name itemMemoryStates
+-keep-property-name articleProgress
+

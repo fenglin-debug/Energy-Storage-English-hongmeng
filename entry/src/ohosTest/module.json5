@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "entry_test",
+    "type": "feature",
+    "description": "BESS HarmonyOS automated tests",
+    "deviceTypes": ["phone"],
+    "deliveryWithInstall": true,
+    "installationFree": false
+  }
+}

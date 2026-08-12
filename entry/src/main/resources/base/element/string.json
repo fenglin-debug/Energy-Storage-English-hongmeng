@@ -1,0 +1,13 @@
+{
+  "string": [
+    { "name": "module_desc", "value": "完全离线的储能英语训练工具" },
+    { "name": "entry_ability_desc", "value": "储能英语实战主窗口" },
+    { "name": "entry_ability_label", "value": "储能英语实战" },
+    { "name": "reminder_permission_reason", "value": "用于按您设置的时间发送本地学习提醒" },
+    { "name": "tab_vocabulary", "value": "词汇" },
+    { "name": "tab_scenario", "value": "场景" },
+    { "name": "tab_article", "value": "文章" },
+    { "name": "tab_settings", "value": "设置" }
+  ]
+}
+
