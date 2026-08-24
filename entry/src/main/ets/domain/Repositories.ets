@@ -2,6 +2,7 @@ import {
   AppSettings,
   AppSupportInfo,
   Article,
+  AudioQueueItem,
   DialogueSelfRating,
   DocumentRef,
   LearningBackupInspection,
@@ -9,11 +10,11 @@ import {
   CorpusPreview,
   PlaybackSnapshot,
   QuestionMode,
-  Rating,
   ScenarioAdvance,
   ScenarioSummary,
   ScenarioUnitView,
   Vocabulary,
+  VocabularyFilter,
   VocabularyAssessment,
   VocabularyQueue,
   VocabularySessionView
@@ -22,7 +23,8 @@ import {
 export type Unsubscribe = () => void;
 
 export interface VocabularyRepository {
-  list(query: string, favoritesOnly: boolean): Promise<Vocabulary[]>;
+  list(filter: VocabularyFilter): Promise<Vocabulary[]>;
+  get(wordId: string): Promise<Vocabulary | null>;
   todayQueue(): Promise<VocabularyQueue>;
   startOrResumeSession(): Promise<string>;
   session(sessionId: string): Promise<VocabularySessionView>;
@@ -30,7 +32,6 @@ export interface VocabularyRepository {
   revealHint(sessionId: string): Promise<void>;
   submitAssessment(sessionId: string, assessment: VocabularyAssessment): Promise<void>;
   advanceToNext(sessionId: string): Promise<void>;
-  submitRating(sessionId: string, rating: Rating): Promise<void>;
   setFavorite(wordId: string, favorite: boolean): Promise<void>;
   questionPrompt(mode: QuestionMode, word: Vocabulary): string;
 }
@@ -73,9 +74,13 @@ export interface CorpusRepository {
 export interface AudioPlaybackRepository {
   snapshot(): PlaybackSnapshot;
   play(assetId: string, speed: number): Promise<void>;
+  playQueue(items: AudioQueueItem[], startIndex: number, startPositionMs: number, speed: number,
+    autoAdvance: boolean, repeatAll: boolean, reshuffleOnRepeat?: boolean): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;
   seekTo(positionMs: number): Promise<void>;
+  skipToNext(): Promise<void>;
+  skipToPrevious(): Promise<void>;
   stop(): Promise<void>;
   subscribe(listener: (snapshot: PlaybackSnapshot) => void): Unsubscribe;
 }

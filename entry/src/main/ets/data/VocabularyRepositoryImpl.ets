@@ -1,7 +1,7 @@
 import { relationalStore } from '@kit.ArkData';
 import {
-  FsrsState, QuestionMode, Rating, Vocabulary, VocabularyAssessment,
-  VocabularyExample, VocabularyQueue, VocabularySessionView
+  FsrsState, MasteryFilter, QuestionMode, Rating, Vocabulary, VocabularyAssessment,
+  VocabularyExample, VocabularyFilter, VocabularyQueue, VocabularySessionView, WordMemoryState
 } from '../domain/Models';
 import { VocabularyRepository } from '../domain/Repositories';
 import { FsrsCard, FsrsScheduler } from '../domain/Fsrs';
@@ -28,24 +28,42 @@ export class VocabularyRepositoryImpl implements VocabularyRepository {
     this.database = database; this.settings = settings;
   }
 
-  async list(query: string, favoritesOnly: boolean): Promise<Vocabulary[]> {
-    const escaped = `%${query.trim().toLowerCase().replace(new RegExp('[%_]', 'g'), '\\$&')}%`;
+  async list(filter: VocabularyFilter): Promise<Vocabulary[]> {
+    await this.repairInfiniteDue();
+    const query = filter.query.trim();
+    const escaped = `%${query.toLowerCase().replace(new RegExp('[%_]', 'g'), '\\$&')}%`;
+    const now = Date.now();
     return await queryRows(this.database.get(),
-      `SELECT v.*, COALESCE(m.isFavorite,0) favorite FROM vocabulary_entries v
+      `SELECT v.*, m.fsrsState,m.difficulty,m.stability,m.dueAtEpochMs,m.reps,m.lapses,m.masteredUi,
+       m.lastQuestionMode,m.isFavorite,COALESCE(m.isFavorite,0) favorite,m.wordId memoryWordId
+       FROM vocabulary_entries v
        LEFT JOIN word_memory_states m ON m.wordId=v.id WHERE v.active=1
-       AND (?='' OR lower(v.term) LIKE ? ESCAPE '\\' OR lower(v.chineseGloss) LIKE ? ESCAPE '\\')
-       AND (?=0 OR COALESCE(m.isFavorite,0)=1) ORDER BY v.id`, mapVocabulary,
-      [query.trim(), escaped, escaped, favoritesOnly ? 1 : 0]);
+       AND (?='' OR lower(v.term) LIKE ? ESCAPE '\\' OR lower(v.chineseGloss) LIKE ? ESCAPE '\\'
+         OR lower(COALESCE(v.englishDefinition,'')) LIKE ? ESCAPE '\\'
+         OR EXISTS(SELECT 1 FROM vocabulary_aliases a WHERE a.wordId=v.id AND lower(a.alias) LIKE ? ESCAPE '\\'))
+       AND (?='' OR v.topic=?) AND (?='' OR v.cefrLevel=?)
+       AND (?=0 OR COALESCE(m.isFavorite,0)=1)
+       AND (?=0 OR (m.reps>0 AND m.dueAtEpochMs<=?))
+       AND (?='ALL' OR (?='NOT_STARTED' AND (m.wordId IS NULL OR m.reps=0))
+         OR (?='LEARNING' AND m.reps>0 AND m.masteredUi=0)
+         OR (?='MASTERED' AND m.masteredUi=1))
+       ORDER BY v.id`, mapVocabulary,
+      [query, escaped, escaped, escaped, escaped, filter.topic, filter.topic, filter.cefrLevel, filter.cefrLevel,
+        filter.favoritesOnly ? 1 : 0, filter.dueOnly ? 1 : 0, now,
+        filter.mastery, filter.mastery, filter.mastery, filter.mastery]);
   }
 
+  async get(wordId: string): Promise<Vocabulary | null> { return await this.word(wordId); }
+
   async todayQueue(): Promise<VocabularyQueue> {
+    await this.repairInfiniteDue();
     const target = (await this.settings.get()).dailyNewWordTarget; const now = Date.now();
     const due = await this.count(`SELECT COUNT(*) FROM word_memory_states m JOIN vocabulary_entries v ON v.id=m.wordId
-      WHERE v.active=1 AND m.masteredUi=0 AND m.reps>0 AND m.dueAtEpochMs<=?`, [now]);
+      WHERE v.active=1 AND m.reps>0 AND m.dueAtEpochMs<=?`, [now]);
     const fresh = await this.count(`SELECT COUNT(*) FROM vocabulary_entries v LEFT JOIN word_memory_states m ON m.wordId=v.id
       WHERE v.active=1 AND (m.wordId IS NULL OR (m.reps=0 AND m.masteredUi=0))`);
     const duePhrases = await this.count(`SELECT COUNT(*) FROM item_memory_states m JOIN phrases p ON p.id=m.itemId
-      WHERE p.active=1 AND m.itemType='PHRASE' AND m.masteredUi=0 AND m.reps>0 AND m.dueAtEpochMs<=?`, [now]);
+      WHERE p.active=1 AND m.itemType='PHRASE' AND m.reps>0 AND m.dueAtEpochMs<=?`, [now]);
     const freshPhrases = await this.count(`SELECT COUNT(*) FROM phrases p LEFT JOIN item_memory_states m
       ON m.itemId=p.id AND m.itemType='PHRASE' WHERE p.active=1 AND m.itemId IS NULL`);
     const newCount = Math.min(target, fresh + freshPhrases);
@@ -55,11 +73,12 @@ export class VocabularyRepositoryImpl implements VocabularyRepository {
   async startOrResumeSession(): Promise<string> {
     const existing = await this.checkpointQuery("WHERE status='IN_PROGRESS' ORDER BY updatedAtEpochMs DESC LIMIT 1");
     if (existing.length > 0) return existing[0].sessionId;
+    await this.repairInfiniteDue();
     const now = Date.now(); const target = (await this.settings.get()).dailyNewWordTarget;
     const due = await this.ids(`SELECT v.id FROM vocabulary_entries v JOIN word_memory_states m ON m.wordId=v.id
-      WHERE v.active=1 AND m.masteredUi=0 AND m.reps>0 AND m.dueAtEpochMs<=? ORDER BY m.dueAtEpochMs,v.id`, [now]);
+      WHERE v.active=1 AND m.reps>0 AND m.dueAtEpochMs<=? ORDER BY m.dueAtEpochMs,v.id`, [now]);
     const duePhrases = await this.ids(`SELECT p.id FROM phrases p JOIN item_memory_states m ON m.itemId=p.id AND m.itemType='PHRASE'
-      WHERE p.active=1 AND m.masteredUi=0 AND m.reps>0 AND m.dueAtEpochMs<=? ORDER BY m.dueAtEpochMs,p.id`, [now]);
+      WHERE p.active=1 AND m.reps>0 AND m.dueAtEpochMs<=? ORDER BY m.dueAtEpochMs,p.id`, [now]);
     const freshWords = await this.ids(`SELECT v.id FROM vocabulary_entries v LEFT JOIN word_memory_states m ON m.wordId=v.id
       WHERE v.active=1 AND (m.wordId IS NULL OR (m.reps=0 AND m.masteredUi=0)) ORDER BY v.id`);
     const freshPhrases = await this.ids(`SELECT p.id FROM phrases p LEFT JOIN item_memory_states m
@@ -69,8 +88,10 @@ export class VocabularyRepositoryImpl implements VocabularyRepository {
     if (queue.length === 0) throw new Error('NO_VOCABULARY_DUE');
     const firstMemory = await this.memory(queue[0]); const sessionId = this.id('vocab');
     const corpusVersion = await this.database.metadata('active_corpus_content_version') ?? 'none';
-    await this.database.get().executeSql('INSERT INTO vocabulary_session_checkpoints VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, NULL, ?, ?)',
-      [sessionId, 'IN_PROGRESS', corpusVersion, JSON.stringify(queue), 0, this.modeFor(firstMemory), now, now]);
+    const firstMode = this.modeFor(firstMemory);
+    await this.database.get().executeSql('INSERT INTO vocabulary_session_checkpoints VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, ?, ?)',
+      [sessionId, 'IN_PROGRESS', corpusVersion, JSON.stringify(queue), 0, firstMode,
+        firstMode === QuestionMode.INTRODUCE ? 1 : 0, now, now]);
     return sessionId;
   }
 
@@ -96,9 +117,15 @@ export class VocabularyRepositoryImpl implements VocabularyRepository {
   }
 
   async submitAssessment(sessionId: string, assessment: VocabularyAssessment): Promise<void> {
-    const rating = assessment === VocabularyAssessment.UNFAMILIAR ? Rating.AGAIN :
-      assessment === VocabularyAssessment.FUZZY ? Rating.HARD : Rating.EASY;
-    await this.recordReview(sessionId, rating, assessment, true, false);
+    await this.database.transaction(async store => {
+      const checkpoints = await this.checkpointQuery('WHERE sessionId=?', [sessionId], store);
+      if (checkpoints.length === 0 || checkpoints[0].status !== 'IN_PROGRESS') throw new Error('SESSION_NOT_ACTIVE');
+      const cp = checkpoints[0];
+      if (cp.mode !== QuestionMode.INTRODUCE && !cp.answer) throw new Error('ANSWER_NOT_REVEALED');
+      await store.executeSql(`UPDATE vocabulary_session_checkpoints SET answerRevealed=1,
+        assessmentSubmitted=1,selectedAssessment=?,updatedAtEpochMs=? WHERE sessionId=?`,
+        [assessment, Date.now(), sessionId]);
+    });
   }
 
   async advanceToNext(sessionId: string): Promise<void> {
@@ -107,16 +134,21 @@ export class VocabularyRepositoryImpl implements VocabularyRepository {
       if (checkpoints.length === 0 || checkpoints[0].status !== 'IN_PROGRESS') throw new Error('SESSION_NOT_ACTIVE');
       const cp = checkpoints[0];
       if (!cp.assessed) throw new Error('ASSESSMENT_REQUIRED');
+      const wordId = cp.queue[cp.index];
+      if (wordId === undefined || cp.assessment === null) throw new Error('STALE_SESSION');
+      const key = `${sessionId}:${cp.index}`;
+      if (!await this.exists(store, 'SELECT 1 FROM review_action_keys WHERE actionKey=?', [key])) {
+        await store.executeSql('INSERT INTO review_action_keys VALUES (?, ?, ?, ?)', [key, sessionId, cp.index, Date.now()]);
+        await this.persistAssessment(store, wordId, cp.mode, cp.hint, cp.assessment as VocabularyAssessment);
+      }
       const nextIndex = cp.index + 1; const completed = nextIndex >= cp.queue.length;
       const nextMemory = completed ? null : await this.memory(cp.queue[nextIndex], store);
+      const nextMode = completed ? cp.mode : this.modeFor(nextMemory);
       await store.executeSql(`UPDATE vocabulary_session_checkpoints SET status=?,currentIndex=?,questionMode=?,
-        answerRevealed=0,hintRevealed=0,assessmentSubmitted=0,selectedAssessment=NULL,updatedAtEpochMs=? WHERE sessionId=?`,
-        [completed ? 'COMPLETED' : 'IN_PROGRESS', nextIndex, completed ? cp.mode : this.modeFor(nextMemory), Date.now(), sessionId]);
+        answerRevealed=?,hintRevealed=0,assessmentSubmitted=0,selectedAssessment=NULL,updatedAtEpochMs=? WHERE sessionId=?`,
+        [completed ? 'COMPLETED' : 'IN_PROGRESS', nextIndex, nextMode,
+          !completed && nextMode === QuestionMode.INTRODUCE ? 1 : 0, Date.now(), sessionId]);
     });
-  }
-
-  async submitRating(sessionId: string, rating: Rating): Promise<void> {
-    await this.recordReview(sessionId, rating, null, false, true);
   }
 
   async setFavorite(wordId: string, favorite: boolean): Promise<void> {
@@ -130,59 +162,42 @@ export class VocabularyRepositoryImpl implements VocabularyRepository {
   questionPrompt(mode: QuestionMode, word: Vocabulary): string {
     if (mode === QuestionMode.ZH2EN) return word.chineseGloss;
     if (mode === QuestionMode.LISTENING) return '听音频，说出词义与用法';
-    if (mode === QuestionMode.TRANSFER) return `请用 ${word.term} 回答一个储能销售场景问题`;
+    if (mode === QuestionMode.TRANSFER) return word.term;
     if (mode === QuestionMode.EN2ZH) return word.term;
     return `${word.term}  ${word.ipa}`;
   }
 
-  private async recordReview(sessionId: string, rating: Rating,
-    assessment: VocabularyAssessment | null, introductory: boolean, advance: boolean): Promise<void> {
-    await this.database.transaction(async store => {
-      const checkpoints = await this.checkpointQuery('WHERE sessionId=?', [sessionId], store);
-      if (checkpoints.length === 0 || checkpoints[0].status !== 'IN_PROGRESS') throw new Error('SESSION_NOT_ACTIVE');
-      const cp = checkpoints[0]; const wordId = cp.queue[cp.index]; if (wordId === undefined) throw new Error('STALE_SESSION');
-      if (!introductory && !cp.answer) throw new Error('ANSWER_NOT_REVEALED');
-      const key = `${sessionId}:${cp.index}`;
-      if (await this.exists(store, 'SELECT 1 FROM review_action_keys WHERE actionKey=?', [key])) return;
-      const now = Date.now(); const old = await this.memory(wordId, store);
-      const stateBefore = old === null || old.state === 'NEW' ? FsrsState.NEW : old.state as FsrsState;
-      const card: FsrsCard = old === null || old.state === 'NEW' ?
-        { state: FsrsState.NEW, step: null, stability: null, difficulty: null, dueAtEpochMs: now, lastReviewAtEpochMs: null } :
-        { state: old.state as FsrsState,
-          step: old.state === FsrsState.LEARNING || old.state === FsrsState.RELEARNING ? 0 : null,
-          stability: old.stability, difficulty: old.difficulty, dueAtEpochMs: old.due, lastReviewAtEpochMs: old.lastReview };
-      const reviewed = this.scheduler.review(card, rating, now);
-      const mastered = assessment === VocabularyAssessment.MASTERED;
-      const due = mastered ? Number.MAX_SAFE_INTEGER : reviewed.dueAtEpochMs;
-      const reps = (old?.reps ?? 0) + 1; const lapses = (old?.lapses ?? 0) + (rating === Rating.AGAIN ? 1 : 0);
-      await store.executeSql('INSERT INTO review_action_keys VALUES (?, ?, ?, ?)', [key, sessionId, cp.index, now]);
-      await store.executeSql(`INSERT OR REPLACE INTO review_logs VALUES (?, ?, ?, ?, ?, 1, ?, NULL, ?, ?, ?, ?)`,
-        [this.id('review'), wordId, rating, introductory ? 'SELF_ASSESSMENT' : cp.mode,
-          cp.hint ? 1 : 0, now, Math.max(0, Math.floor((due - now) / 86400000)),
-          old?.lastReview === null || old?.lastReview === undefined ? 0 : Math.max(0, Math.floor((now - old.lastReview) / 86400000)),
-          stateBefore, reviewed.state]);
-      if (this.isPhrase(wordId)) {
-        await store.executeSql(`INSERT OR REPLACE INTO item_memory_states VALUES (?, 'PHRASE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [wordId, reviewed.state, reviewed.difficulty ?? 0, reviewed.stability ?? 0, due, now, reps, lapses,
-            mastered ? 1 : (old?.mastered ? 1 : 0), await this.contentHash(wordId, store), now]);
-      } else {
-        await store.executeSql(`INSERT OR REPLACE INTO word_memory_states VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
-          [wordId, reviewed.state, reviewed.difficulty ?? 0, reviewed.stability ?? 0, due, now, reps, lapses,
-            mastered ? 1 : (old?.mastered ? 1 : 0), cp.mode, old?.favorite ? 1 : 0, await this.contentHash(wordId, store), now]);
-      }
-      if (advance) {
-        const nextIndex = cp.index + 1; const completed = nextIndex >= cp.queue.length;
-        const nextMemory = completed ? null : await this.memory(cp.queue[nextIndex], store);
-        await store.executeSql(`UPDATE vocabulary_session_checkpoints SET status=?,currentIndex=?,questionMode=?,
-          answerRevealed=0,hintRevealed=0,assessmentSubmitted=0,selectedAssessment=NULL,updatedAtEpochMs=? WHERE sessionId=?`,
-          [completed ? 'COMPLETED' : 'IN_PROGRESS', nextIndex, completed ? cp.mode : this.modeFor(nextMemory), now, sessionId]);
-      } else {
-        await store.executeSql(`UPDATE vocabulary_session_checkpoints SET answerRevealed=1,
-          assessmentSubmitted=1,selectedAssessment=?,updatedAtEpochMs=? WHERE sessionId=?`,
-          [assessment, now, sessionId]);
-      }
-      await this.incrementDaily(store, old === null, now);
-    });
+  private async persistAssessment(store: relationalStore.RdbStore, wordId: string, mode: QuestionMode,
+    usedHint: boolean, assessment: VocabularyAssessment): Promise<void> {
+    const rating = assessment === VocabularyAssessment.UNFAMILIAR ? Rating.AGAIN :
+      assessment === VocabularyAssessment.FUZZY ? Rating.HARD : Rating.GOOD;
+    const now = Date.now(); const old = await this.memory(wordId, store);
+    const stateBefore = old === null || old.state === 'NEW' ? FsrsState.NEW : old.state as FsrsState;
+    const card: FsrsCard = old === null || old.state === 'NEW' ?
+      { state: FsrsState.NEW, step: null, stability: null, difficulty: null, dueAtEpochMs: now, lastReviewAtEpochMs: null } :
+      { state: old.state as FsrsState,
+        step: old.state === FsrsState.LEARNING || old.state === FsrsState.RELEARNING ? 0 : null,
+        stability: old.stability, difficulty: old.difficulty, dueAtEpochMs: old.due, lastReviewAtEpochMs: old.lastReview };
+    const reviewed = this.scheduler.review(card, rating, now);
+    const mastered = assessment === VocabularyAssessment.MASTERED;
+    const due = reviewed.dueAtEpochMs;
+    const reps = (old?.reps ?? 0) + 1;
+    const lapses = (old?.lapses ?? 0) + (rating === Rating.AGAIN ? 1 : 0);
+    await store.executeSql(`INSERT OR REPLACE INTO review_logs VALUES (?, ?, ?, ?, ?, 1, ?, NULL, ?, ?, ?, ?)`,
+      [this.id('review'), wordId, rating, mode, usedHint ? 1 : 0, now,
+        Math.max(0, Math.floor((due - now) / 86400000)),
+        old?.lastReview === null || old?.lastReview === undefined ? 0 :
+          Math.max(0, Math.floor((now - old.lastReview) / 86400000)), stateBefore, reviewed.state]);
+    if (this.isPhrase(wordId)) {
+      await store.executeSql(`INSERT OR REPLACE INTO item_memory_states VALUES (?, 'PHRASE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [wordId, reviewed.state, reviewed.difficulty ?? 0, reviewed.stability ?? 0, due, now, reps, lapses,
+          mastered ? 1 : 0, await this.contentHash(wordId, store), now]);
+    } else {
+      await store.executeSql(`INSERT OR REPLACE INTO word_memory_states VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+        [wordId, reviewed.state, reviewed.difficulty ?? 0, reviewed.stability ?? 0, due, now, reps, lapses,
+          mastered ? 1 : 0, mode, old?.favorite ? 1 : 0, await this.contentHash(wordId, store), now]);
+    }
+    await this.incrementDaily(store, old === null || old.reps === 0, now);
   }
 
   private async incrementDaily(store: relationalStore.RdbStore, isNew: boolean, now: number): Promise<void> {
@@ -197,7 +212,7 @@ export class VocabularyRepositoryImpl implements VocabularyRepository {
   private modeFor(memory: MemoryRow | null): QuestionMode {
     if (memory === null || memory.state === FsrsState.NEW) return QuestionMode.INTRODUCE;
     if (memory.state === FsrsState.LEARNING || memory.state === FsrsState.RELEARNING) return memory.reps % 2 === 0 ? QuestionMode.EN2ZH : QuestionMode.ZH2EN;
-    return memory.reps % 3 === 0 ? QuestionMode.LISTENING : memory.reps % 3 === 1 ? QuestionMode.TRANSFER : QuestionMode.EN2ZH;
+    return memory.reps % 2 === 0 ? QuestionMode.LISTENING : QuestionMode.EN2ZH;
   }
 
   private async word(id: string): Promise<Vocabulary | null> {
@@ -205,7 +220,9 @@ export class VocabularyRepositoryImpl implements VocabularyRepository {
       const phrases = await queryRows(this.database.get(), 'SELECT * FROM phrases WHERE id=? AND active=1', mapPhrase, [id]);
       return phrases.length === 0 ? null : phrases[0];
     }
-    const rows = await queryRows(this.database.get(), `SELECT v.*,COALESCE(m.isFavorite,0) favorite FROM vocabulary_entries v
+    const rows = await queryRows(this.database.get(), `SELECT v.*,m.fsrsState,m.difficulty,m.stability,m.dueAtEpochMs,
+      m.reps,m.lapses,m.masteredUi,m.lastQuestionMode,m.isFavorite,COALESCE(m.isFavorite,0) favorite,m.wordId memoryWordId
+      FROM vocabulary_entries v
       LEFT JOIN word_memory_states m ON m.wordId=v.id WHERE v.id=? AND v.active=1`, mapVocabulary, [id]);
     if (rows.length === 0) return null;
     const word = rows[0];
@@ -256,6 +273,18 @@ export class VocabularyRepositoryImpl implements VocabularyRepository {
     const result = await this.database.get().querySql(sql, args); try { return result.goToFirstRow() ? result.getLong(0) : 0; } finally { result.close(); }
   }
 
+  private async repairInfiniteDue(): Promise<void> {
+    if (await this.database.metadata('infinite_due_repair_0_4_1') === 'done') return;
+    const now = Date.now();
+    await this.database.transaction(async store => {
+      await store.executeSql(`UPDATE word_memory_states SET dueAtEpochMs=?,updatedAtEpochMs=?
+        WHERE reps>0 AND dueAtEpochMs>=?`, [now, now, Number.MAX_SAFE_INTEGER]);
+      await store.executeSql(`UPDATE item_memory_states SET dueAtEpochMs=?,updatedAtEpochMs=?
+        WHERE reps>0 AND dueAtEpochMs>=?`, [now, now, Number.MAX_SAFE_INTEGER]);
+    });
+    await this.database.putMetadata('infinite_due_repair_0_4_1', 'done');
+  }
+
   private async exists(store: relationalStore.RdbStore, sql: string, args: relationalStore.ValueType[]): Promise<boolean> {
     const result = await store.querySql(sql, args); try { return result.goToFirstRow(); } finally { result.close(); }
   }
@@ -271,6 +300,15 @@ export class VocabularyRepositoryImpl implements VocabularyRepository {
 }
 
 function mapVocabulary(r: relationalStore.ResultSet): Vocabulary {
+  const memoryWordId = nullableString(r, 'memoryWordId');
+  const memoryState: WordMemoryState | null = memoryWordId === null ? null : {
+    fsrsState: stringValue(r, 'fsrsState') as FsrsState,
+    difficulty: numberValue(r, 'difficulty'), stability: numberValue(r, 'stability'),
+    dueAtEpochMs: integerValue(r, 'dueAtEpochMs'), reps: integerValue(r, 'reps'), lapses: integerValue(r, 'lapses'),
+    masteredUi: booleanValue(r, 'masteredUi'),
+    lastQuestionMode: nullableString(r, 'lastQuestionMode') as QuestionMode | null,
+    isFavorite: booleanValue(r, 'isFavorite')
+  };
   return { id: stringValue(r, 'id'), term: stringValue(r, 'term'), normalizedTerm: stringValue(r, 'normalizedTerm'),
     ipa: stringValue(r, 'ipa'), partOfSpeech: stringValue(r, 'partOfSpeech'), chineseGloss: stringValue(r, 'chineseGloss'),
     englishDefinition: nullableString(r, 'englishDefinition'), collocations: JSON.parse(stringValue(r, 'collocationsJson')) as string[],
@@ -278,7 +316,8 @@ function mapVocabulary(r: relationalStore.ResultSet): Vocabulary {
     commonMistakes: stringValue(r, 'commonMistakes'), topic: stringValue(r, 'topic'),
     scenarioTags: JSON.parse(stringValue(r, 'scenarioTagsJson')) as string[], cefrLevel: stringValue(r, 'cefrLevel'),
     wordAudioAssetId: stringValue(r, 'wordAudioAssetId'), exampleAudioAssetId: stringValue(r, 'exampleAudioAssetId'),
-    contentHash: stringValue(r, 'contentHash'), favorite: booleanValue(r, 'favorite'), itemKind: 'WORD', aliases: [],
+    contentHash: stringValue(r, 'contentHash'), favorite: booleanValue(r, 'favorite'), memoryState: memoryState,
+    itemKind: 'WORD', aliases: [],
     examples: [{ id: `${stringValue(r, 'id')}:primary`, textEn: stringValue(r, 'exampleSentenceEn'),
       textZh: nullableString(r, 'exampleSentenceZh'), audioAssetId: stringValue(r, 'exampleAudioAssetId') }] };
 }
@@ -296,7 +335,8 @@ function mapPhrase(r: relationalStore.ResultSet): Vocabulary {
     partOfSpeech: 'phrase', chineseGloss: textZh, englishDefinition: null, collocations: [],
     exampleSentenceEn: textEn, exampleSentenceZh: textZh, commonMistakes: '', topic: stringValue(r, 'scene'),
     scenarioTags: [stringValue(r, 'category')], cefrLevel: '', wordAudioAssetId: audio,
-    exampleAudioAssetId: audio, contentHash: stringValue(r, 'contentHash'), favorite: false, itemKind: 'PHRASE', aliases: [],
+    exampleAudioAssetId: audio, contentHash: stringValue(r, 'contentHash'), favorite: false, memoryState: null,
+    itemKind: 'PHRASE', aliases: [],
     examples: [{ id: `${stringValue(r, 'id')}:primary`, textEn: textEn, textZh: textZh, audioAssetId: audio }] };
 }
 

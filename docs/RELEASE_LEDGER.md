@@ -2,8 +2,23 @@
 
 | 版本 | versionCode | Bundle ID | DB | 语料格式 | 备份兼容 | 发布证书 SHA-256 | APP SHA-256 | 已知限制 |
 |---|---:|---|---:|---|---|---|---|---|
+| 0.4.1 | 5 | com.bess.salestrainer | 1 | besspack 2 / bessarticle 1 | bessbackup v1 | eb958a3b9e9bc57c772518ffddfff6a363204c522c5b3da155b5ac160faf5138 | 7321b71c07d8902f5eb5a88e7955197b9d5b142da034ab72c661f1283c4479bc | 静态契约、Release/测试目标编译及 APP/HAP 验签通过；本机 API 20 系统镜像目录缺失，升级和设备侧核心功能尚未执行 |
 | 0.2.1 | 3 | com.bess.salestrainer | 1 | besspack 2 / bessarticle 1 | bessbackup v1 | eb958a3b9e9bc57c772518ffddfff6a363204c522c5b3da155b5ac160faf5138 | f4e3e502926f5401f1ea6562b01decc902da2a2381b53eb6e040569de09e029b | API 20 模拟器核心页面与音频冒烟通过；尚未完成 Android 全状态截图 0.98 相似度与真机验收 |
 | 0.2.0 | 2 | com.bess.salestrainer | 1 | besspack 2 / bessarticle 1 | bessbackup v1 | eb958a3b9e9bc57c772518ffddfff6a363204c522c5b3da155b5ac160faf5138 | a92a02f2842fa5af51b269f4326be33704ab6eab37e0c55ecda54d467bca4818 | 首发仍需 API 20/24 真机与邀请测试验收 |
+
+## 0.4.1 验签记录（2026-08-20）
+
+| 检查项 | 结果 |
+|---|---|
+| HAP 验签 | `BESS-HarmonyOS-v0.4.1-signed.hap`，`verify-app success`，codesign 通过，摘要算法 SHA-256 |
+| APP 验签 | `BESS-HarmonyOS-v0.4.1.app`，`verify-app success`，摘要校验通过 |
+| 版本与目标 | 内嵌模块为 `versionName=0.4.1`、`versionCode=5`、compatible/target API 20、Release 非调试构建 |
+| 权限与后台模式 | 仅 `PUBLISH_AGENT_REMINDER`、`KEEP_BACKGROUND_RUNNING`；`audioPlayback`；无 INTERNET、MICROPHONE、WebView |
+| 证书指纹 | `EB:95:8A:3B:9E:9B:C5:7C:77:25:18:FF:DD:FF:F6:A3:63:20:4C:52:2C:5B:3D:A1:55:B5:AC:16:0F:AF:51:38` |
+| 产物 SHA-256 | APP `7321b71c07d8902f5eb5a88e7955197b9d5b142da034ab72c661f1283c4479bc`；HAP `9b8ee37dd547f6ea86378ed1596566db79196b61700fc69f588d62f450f27927` |
+| 自动化 | 静态契约通过；ArkTS Release 主目标与 `entry@ohosTest` 目标均编译成功；FSRS/备份等测试已打入测试 HAP |
+| API 20 模拟器 | `BESS_API20` 配置仍存在，但其引用的 `sdk/system-image/HarmonyOS-6.0.0/phone_all_x86/` 不存在，模拟器返回 `Unable to start the emulator`，因此未清数据、未安装包，也未执行升级/离线/锁屏验收 |
+| 产物路径 | `harmonyos/artifacts/v0.4.1/` |
 
 ## 0.2.1 验签记录（2026-08-04）
 

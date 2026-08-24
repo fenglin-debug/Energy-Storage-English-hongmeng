@@ -1,10 +1,9 @@
 {
   "name": "entry",
-  "version": "0.2.0",
+  "version": "0.4.1",
   "description": "BESS HarmonyOS entry HAP",
   "main": "",
   "author": "BESS",
   "license": "UNLICENSED",
   "dependencies": {}
 }
-

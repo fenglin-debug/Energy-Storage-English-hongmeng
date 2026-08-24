@@ -11,6 +11,11 @@
       "sha256": "4b638452dc83de466a1c034ccf0d22f4a84e0e752b854220039c1649e9490439"
     },
     {
+      "source": "../android/app/src/main/assets/articles/youtube-bess.bessarticle",
+      "destination": "entry/src/main/resources/rawfile/youtube-bess.bessarticle",
+      "sha256": "5e64f7176ead34e738f5bc2a6cfb1009fb5f22f9ddda6b982134e800567f8371"
+    },
+    {
       "source": "../android/core/model/src/test/resources/fsrs_golden.json",
       "destination": "entry/src/ohosTest/resources/rawfile/fsrs_golden.json",
       "sha256": "fe89974fa131b337c9a1e29f582548904d301f766f9c0054b056840e1df4259e"

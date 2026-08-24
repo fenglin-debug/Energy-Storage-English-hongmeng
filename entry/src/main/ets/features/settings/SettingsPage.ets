@@ -10,7 +10,7 @@ import { InfoCard, SectionTitle, shortError } from '../../ui/Common';
 export struct SettingsPage {
   @State settings: AppSettings = DEFAULT_SETTINGS;
   @State support: AppSupportInfo = {
-    appVersionName: '0.2.2', appVersionCode: 4, databaseVersion: 1,
+    appVersionName: '0.4.1', appVersionCode: 5, databaseVersion: 1,
     corpusPackageKey: null, corpusContentVersion: null,
     recordCounts: { wordMemoryStates: 0, reviewLogs: 0, vocabularyCheckpoints: 0, reviewActionKeys: 0,
       scenarioSessions: 0, scenarioTurnProgress: 0, studyTasks: 0, itemMemoryStates: 0, articleProgress: 0 },
@@ -57,6 +57,8 @@ export struct SettingsPage {
           value => { this.settings.autoPlayCustomerAudio = value; });
         this.settingSwitch('自动播放词汇音频', this.settings.autoPlayVocabularyAudio,
           value => { this.settings.autoPlayVocabularyAudio = value; });
+        this.settingSwitch('自动播放下一篇文章', this.settings.autoPlayNextArticle,
+          value => { this.settings.autoPlayNextArticle = value; });
 
         SectionTitle({ text: '学习记录备份' });
         InfoCard({ title: '三端通用 .bessbackup', body: '完整覆盖恢复九类学习记录，不包含语料正文、音频、导入文章、设置或审计内容。' });

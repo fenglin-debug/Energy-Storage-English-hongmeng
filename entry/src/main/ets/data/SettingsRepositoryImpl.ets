@@ -17,6 +17,7 @@ export class SettingsRepositoryImpl implements SettingsRepository {
       dailyNewWordTarget: await store.get('dailyNewWordTarget', DEFAULT_SETTINGS.dailyNewWordTarget) as number,
       autoPlayCustomerAudio: await store.get('autoPlayCustomerAudio', DEFAULT_SETTINGS.autoPlayCustomerAudio) as boolean,
       autoPlayVocabularyAudio: await store.get('autoPlayVocabularyAudio', DEFAULT_SETTINGS.autoPlayVocabularyAudio) as boolean,
+      autoPlayNextArticle: await store.get('autoPlayNextArticle', DEFAULT_SETTINGS.autoPlayNextArticle) as boolean,
       dailyReminderEnabled: await store.get('dailyReminderEnabled', DEFAULT_SETTINGS.dailyReminderEnabled) as boolean,
       dailyReminderHour: await store.get('dailyReminderHour', DEFAULT_SETTINGS.dailyReminderHour) as number,
       dailyReminderMinute: await store.get('dailyReminderMinute', DEFAULT_SETTINGS.dailyReminderMinute) as number,
@@ -34,6 +35,7 @@ export class SettingsRepositoryImpl implements SettingsRepository {
     await store.put('dailyNewWordTarget', value.dailyNewWordTarget);
     await store.put('autoPlayCustomerAudio', value.autoPlayCustomerAudio);
     await store.put('autoPlayVocabularyAudio', value.autoPlayVocabularyAudio);
+    await store.put('autoPlayNextArticle', value.autoPlayNextArticle);
     await store.put('dailyReminderEnabled', value.dailyReminderEnabled);
     await store.put('dailyReminderHour', value.dailyReminderHour);
     await store.put('dailyReminderMinute', value.dailyReminderMinute);

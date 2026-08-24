@@ -112,6 +112,10 @@ export struct ScenarioPage {
           Text('客户').fontSize(16).fontWeight(FontWeight.Medium).width('100%');
           if (this.unit.customerTextRevealed) {
             Text(this.unit.customerTextEn).fontSize(17).lineHeight(26).width('100%');
+            if ((this.unit.customerTextZh ?? '').length > 0) {
+              Text(this.unit.customerTextZh ?? '').fontSize(15).lineHeight(23)
+                .fontColor($r('app.color.text_secondary')).width('100%');
+            }
           } else {
             Text('▓▓▓▓▓▓▓▓▓▓（先听音频）').fontSize(17)
               .fontColor($r('app.color.text_secondary')).width('100%').accessibilityText('客户原文尚未显示');

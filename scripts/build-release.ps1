@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [string]$Version = '0.2.2'
+  [string]$Version = '0.4.1'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -78,15 +78,22 @@ $appTarget = Join-Path $artifactRoot "BESS-HarmonyOS-v$Version.app"
 $hapTarget = Join-Path $artifactRoot "BESS-HarmonyOS-v$Version-signed.hap"
 Copy-Item -LiteralPath $app.FullName -Destination $appTarget
 Copy-Item -LiteralPath $hap.FullName -Destination $hapTarget
-Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\RELEASE_NOTES_0.2.1.md') -Destination $artifactRoot
-Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\UPGRADE_0.2.1.md') -Destination $artifactRoot
+Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\RELEASE_NOTES_0.4.1.md') -Destination $artifactRoot
+Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\UPGRADE_0.4.1.md') -Destination $artifactRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\INSTALL_AND_UPGRADE.md') -Destination $artifactRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\OFFLINE_PRIVACY.md') -Destination $artifactRoot
-Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\SIGNING_FINGERPRINT_0.2.1.txt') -Destination $artifactRoot
+Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\SIGNING_FINGERPRINT_0.4.1.txt') -Destination $artifactRoot
 
 $sumLines = foreach ($file in Get-ChildItem $artifactRoot -File | Where-Object Extension -In '.app','.hap') {
   $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
   "$hash  $($file.Name)"
 }
 Set-Content -LiteralPath (Join-Path $artifactRoot 'SHA256SUMS.txt') -Value $sumLines -Encoding UTF8
+$hapHash = (Get-FileHash -LiteralPath $hapTarget -Algorithm SHA256).Hash.ToLowerInvariant()
+$appHash = (Get-FileHash -LiteralPath $appTarget -Algorithm SHA256).Hash.ToLowerInvariant()
+$fingerprintPath = Join-Path $artifactRoot 'SIGNING_FINGERPRINT_0.4.1.txt'
+$fingerprintText = Get-Content -Raw -Encoding UTF8 -LiteralPath $fingerprintPath
+$fingerprintText = $fingerprintText -replace '(?m)(HAP SHA-256:\r?\n)[0-9a-f]{64}', "`$1$hapHash"
+$fingerprintText = $fingerprintText -replace '(?m)(APP SHA-256:\r?\n)[0-9a-f]{64}', "`$1$appHash"
+Set-Content -LiteralPath $fingerprintPath -Value $fingerprintText -Encoding UTF8
 Write-Host "Release artifacts created at $artifactRoot" -ForegroundColor Green

@@ -1,0 +1,21 @@
+BESS HarmonyOS 0.4.1 / versionCode 5
+Bundle ID: com.bess.salestrainer
+Target API: HarmonyOS 6.0.0 API 20
+
+Release certificate SHA-256:
+EB:95:8A:3B:9E:9B:C5:7C:77:25:18:FF:DD:FF:F6:A3:63:20:4C:52:2C:5B:3D:A1:55:B5:AC:16:0F:AF:51:38
+
+HAP SHA-256:
+9b8ee37dd547f6ea86378ed1596566db79196b61700fc69f588d62f450f27927
+
+APP SHA-256:
+7321b71c07d8902f5eb5a88e7955197b9d5b142da034ab72c661f1283c4479bc
+
+Verification:
+- HAP: verify-app success; codesign success; release Profile; SHA-256 digest verified.
+- APP: verify-app success; SHA-256 digest verified.
+- Embedded module: versionName=0.4.1, versionCode=5, min/target API 20, no INTERNET or MICROPHONE permission.
+
+Acceptance boundary:
+Static contracts, release compilation, OHOS Test target compilation and signatures passed. Device-side tests
+were not run because the configured BESS_API20 instance's referenced HarmonyOS system-image directory is absent.

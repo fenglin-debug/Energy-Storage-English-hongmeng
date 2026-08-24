@@ -15,6 +15,7 @@ import { LearningBackupRepositoryImpl } from '../data/LearningBackupRepositoryIm
 import { cryptoService } from '../data/CryptoService';
 import { learningBackupCodec } from '../data/LearningBackupCodec';
 import { ReminderService } from '../data/ReminderService';
+import { ArticlePlaybackProgressCoordinator } from '../data/ArticlePlaybackProgressCoordinator';
 
 export class AppServices {
   vocabulary!: VocabularyRepository;
@@ -43,6 +44,7 @@ export class AppServices {
       this.reminders = new ReminderService(databaseService, context);
       await corpus.ensureBundledActivated();
       await articles.ensureBundledArticles();
+      await new ArticlePlaybackProgressCoordinator(articles, this.audio).start();
       this.initialized = true; this.initializationError = null;
     } catch (error) {
       this.initializationError = String(error); throw new Error(this.initializationError);

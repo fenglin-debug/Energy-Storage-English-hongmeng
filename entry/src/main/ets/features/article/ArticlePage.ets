@@ -1,6 +1,6 @@
 import { promptAction } from '@kit.ArkUI';
 import { appServices } from '../../ability/AppServices';
-import { Article, ArticleParagraph, DocumentRef, PlaybackSnapshot } from '../../domain/Models';
+import { Article, ArticleParagraph, AudioQueueItem, DocumentRef, PlaybackSnapshot } from '../../domain/Models';
 import { fileService } from '../../data/FileService';
 import { shortError } from '../../ui/Common';
 import { fadeTransition } from '../../ui/TransitionUtil';
@@ -22,7 +22,8 @@ export struct ArticlePage {
   @State importTopic: string = '本地导入';
   @State includeInRandom: boolean = true;
   @State expandedTranslations: number[] = [];
-  @State playback: PlaybackSnapshot = { assetId: null, state: 'idle', positionMs: 0, durationMs: 0, speed: 1, errorCode: null };
+  @State playback: PlaybackSnapshot = { assetId: null, state: 'idle', positionMs: 0, durationMs: 0, speed: 1,
+    queueIndex: -1, queueSize: 0, transition: null, errorCode: null };
   @State playing: boolean = false;
   @State randomMode: boolean = false;
   @State randomQueue: string[] = [];
@@ -38,6 +39,13 @@ export struct ArticlePage {
     this.load();
     this.unsubscribe = appServices.audio.subscribe(value => {
       this.playback = value;
+      if (value.assetId !== null && value.assetId !== this.current.audioAssetId) {
+        const moved = this.articles.find(item => item.audioAssetId === value.assetId);
+        if (moved !== undefined) {
+          this.current = moved; this.reading = true; this.detailMode = true;
+          this.expandedTranslations = []; this.activeIndex = -1; this.lastSavedPosition = moved.lastPositionMs;
+        }
+      }
       if (value.assetId === this.current.audioAssetId) {
         if (value.durationMs > 0 && value.positionMs >= value.durationMs) this.playing = false;
         else if (value.state === 'playing') this.playing = true;
@@ -51,13 +59,7 @@ export struct ArticlePage {
         this.activeIndex = index;
         if (index >= 0) this.paragraphScroller.scrollToIndex(index, true, ScrollAlign.CENTER);
       }
-      if (Math.abs(value.positionMs - this.lastSavedPosition) >= 5000) {
-        this.lastSavedPosition = value.positionMs;
-        appServices.articles.saveProgress(this.current.id, value.positionMs, false);
-      }
-      if (value.state === 'completed') {
-        appServices.articles.saveProgress(this.current.id, value.durationMs, true);
-      }
+      this.lastSavedPosition = value.positionMs;
     });
   }
 
@@ -240,6 +242,9 @@ export struct ArticlePage {
             .fontColor($r('app.color.text_secondary'));
         }.width('100%');
         Row({ space: 8 }) {
+          Button('上一篇').type(ButtonType.Normal).layoutWeight(1).height(52)
+            .fontColor($r('app.color.brand_primary')).backgroundColor(Color.Transparent)
+            .border({ width: 1, color: $r('app.color.border') }).onClick(() => this.previousArticle());
           Button(this.playback.assetId === this.current.audioAssetId && this.playing ? '暂停' : '播放')
             .layoutWeight(1).height(52).onClick(() => this.togglePlay());
           Button('下一篇').type(ButtonType.Normal).layoutWeight(1).height(52)
@@ -251,7 +256,16 @@ export struct ArticlePage {
     }.width('100%').height('100%').transition(fadeTransition());
   }
 
-  private async load(): Promise<void> { try { this.articles = await appServices.articles.list(); } catch (error) { this.toast(error); } }
+  private async load(): Promise<void> {
+    try {
+      this.articles = await appServices.articles.list();
+      const snapshot = appServices.audio.snapshot();
+      if (snapshot.assetId !== null) {
+        const active = this.articles.find(item => item.audioAssetId === snapshot.assetId);
+        if (active !== undefined && this.reading) this.current = active;
+      }
+    } catch (error) { this.toast(error); }
+  }
 
   private async chooseAudio(): Promise<void> {
     this.menuVisible = false; const source = await fileService.pickOpen(['.m4a', '.mp3', '.wav']); if (source === null) return;
@@ -306,7 +320,8 @@ export struct ArticlePage {
   private async random(): Promise<void> {
     this.randomQueue = await appServices.articles.randomIds(); this.randomIndex = 0;
     if (this.randomQueue.length === 0) { this.importMessage = '没有可用于随机练习的文章'; return; }
-    const article = await appServices.articles.get(this.randomQueue[0]); if (article !== null) this.openArticle(article, true);
+    const article = await appServices.articles.get(this.randomQueue[0]);
+    if (article !== null) { this.openArticle(article, true); await this.startQueuePlayback(); }
   }
 
   private openArticle(article: Article, random: boolean): void {
@@ -316,14 +331,8 @@ export struct ArticlePage {
 
   private async togglePlay(): Promise<void> {
     try {
-      if (this.playback.assetId !== this.current.audioAssetId) {
-        const settings = await appServices.settings.get(); await appServices.audio.play(this.current.audioAssetId, settings.playbackSpeed);
-        if (this.current.lastPositionMs > 0 && this.current.lastPositionMs < this.current.durationMs - 1000) {
-          await appServices.audio.seekTo(this.current.lastPositionMs);
-        } else if (this.current.lastPositionMs >= this.current.durationMs - 1000) {
-          await appServices.audio.seekTo(0);
-        }
-        this.playing = true;
+      if (this.playback.assetId !== this.current.audioAssetId || this.playback.queueSize === 0) {
+        await this.startQueuePlayback(); this.playing = true;
       } else if (this.playing) {
         await appServices.audio.pause(); this.playing = false;
       } else {
@@ -334,14 +343,18 @@ export struct ArticlePage {
 
   private async closePlayer(): Promise<void> {
     const position = this.playback.assetId === this.current.audioAssetId ? this.playback.positionMs : this.current.lastPositionMs;
-    await appServices.articles.saveProgress(this.current.id, position, false); await appServices.audio.stop();
+    await appServices.articles.saveProgress(this.current.id, position, false);
     this.reading = false; this.randomMode = false; this.detailMode = false; this.playing = false; await this.load();
   }
 
   private async nextArticle(): Promise<void> {
     try {
       const position = this.playback.assetId === this.current.audioAssetId ? this.playback.positionMs : this.current.lastPositionMs;
-      await appServices.articles.saveProgress(this.current.id, position, false); await appServices.audio.stop(); this.playing = false;
+      await appServices.articles.saveProgress(this.current.id, position, false);
+      if (this.playback.queueSize > 1 && this.playback.assetId === this.current.audioAssetId) {
+        await appServices.audio.skipToNext(); return;
+      }
+      await appServices.audio.stop(); this.playing = false;
       let nextId: string | null = null;
       if (this.randomMode) {
         this.randomIndex++;
@@ -360,6 +373,42 @@ export struct ArticlePage {
     } catch (error) {
       this.toast(error);
     }
+  }
+
+  private async previousArticle(): Promise<void> {
+    try {
+      const position = this.playback.assetId === this.current.audioAssetId ? this.playback.positionMs : this.current.lastPositionMs;
+      await appServices.articles.saveProgress(this.current.id, position, false);
+      if (this.playback.queueSize > 1 && this.playback.assetId === this.current.audioAssetId) {
+        await appServices.audio.skipToPrevious(); return;
+      }
+      const ids = this.randomMode ? this.randomQueue : this.articles.map(item => item.id);
+      const index = ids.indexOf(this.current.id);
+      const previous = index > 0 ? index - 1 : ids.length - 1;
+      const id = ids[previous]; if (id === undefined) return;
+      const article = await appServices.articles.get(id); if (article !== null) this.openArticle(article, this.randomMode);
+    } catch (error) { this.toast(error); }
+  }
+
+  private async startQueuePlayback(): Promise<void> {
+    const settings = await appServices.settings.get();
+    const ordered = this.randomMode ? this.randomQueue.map(id => this.articles.find(item => item.id === id)) : this.articles;
+    const values: Article[] = [];
+    ordered.forEach(item => { if (item !== undefined) values.push(item); });
+    if (values.length === 0) values.push(this.current);
+    const startIndex = Math.max(0, values.findIndex(item => item.id === this.current.id));
+    const saved = this.current.lastPositionMs;
+    const startAt = saved > 0 && saved < this.current.durationMs - 10000 ? saved : 0;
+    const queue: AudioQueueItem[] = values.map(item => {
+      const queueItem: AudioQueueItem = {
+        assetId: item.audioAssetId,
+        title: item.titleZh.length > 0 ? item.titleZh : item.title,
+        subtitle: item.topic
+      };
+      return queueItem;
+    });
+    await appServices.audio.playQueue(queue, startIndex, startAt, settings.playbackSpeed,
+      settings.autoPlayNextArticle, values.length > 1, this.randomMode);
   }
 
   private toggleTranslation(index: number, paragraph: ArticleParagraph): void {

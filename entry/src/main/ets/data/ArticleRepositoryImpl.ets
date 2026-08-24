@@ -75,10 +75,17 @@ export class ArticleRepositoryImpl implements ArticleRepository {
   }
 
   async ensureBundledArticles(): Promise<void> {
+    const marker = await this.database.metadata('bundled_article_set_version');
+    if (marker === 'android-0.4.1-22') return;
+    for (const name of ['bundled.bessarticle', 'youtube-bess.bessarticle']) {
+      const operation = await this.installPackage(await this.files.rawFile(name), true);
+      if (!operation.ok) throw new Error(operation.errorCode ?? 'ARTICLE_INSTALL_FAILED');
+    }
     const result = await this.database.get().querySql("SELECT COUNT(*) FROM articles WHERE source='BUNDLED'");
-    try { if (result.goToFirstRow() && result.getLong(0) > 0) return; } finally { result.close(); }
-    const operation = await this.installPackage(await this.files.rawFile('bundled.bessarticle'), true);
-    if (!operation.ok) throw new Error(operation.errorCode ?? 'ARTICLE_INSTALL_FAILED');
+    try {
+      if (!result.goToFirstRow() || result.getLong(0) !== 22) throw new Error('BUNDLED_ARTICLE_COUNT_MISMATCH');
+    } finally { result.close(); }
+    await this.database.putMetadata('bundled_article_set_version', 'android-0.4.1-22');
   }
 
   async importAudio(audio: DocumentRef, subtitle: DocumentRef | null, audioDisplayName: string,

@@ -18,8 +18,8 @@ $allEts = (Get-ChildItem (Join-Path $projectRoot 'entry\src\main\ets') -Recurse 
   ForEach-Object { Get-Content -Raw -Encoding UTF8 -LiteralPath $_.FullName }) -join "`n"
 
 Assert-True ($app.app.bundleName -eq 'com.bess.salestrainer') 'bundleName must stay permanent'
-Assert-True ($app.app.versionCode -eq 4) 'versionCode must be 4 for v0.2.2'
-Assert-True ($app.app.versionName -eq '0.2.2') 'versionName must be 0.2.2'
+Assert-True ($app.app.versionCode -eq 5) 'versionCode must be 5 for v0.4.1'
+Assert-True ($app.app.versionName -eq '0.4.1') 'versionName must be 0.4.1'
 Assert-True ($buildProfile.app.products[0].compatibleSdkVersion -eq '6.0.0(20)') 'compatible SDK must be HarmonyOS 6 API 20'
 Assert-True ($buildProfile.app.products[0].targetSdkVersion -eq '6.0.0(20)') 'target SDK must be HarmonyOS 6 API 20'
 Assert-True ($moduleText -notmatch 'ohos.permission.INTERNET') 'offline app must not request INTERNET'
@@ -47,12 +47,50 @@ Assert-True ($backupText.Contains("learning-data.bin")) 'backup payload entry ch
 $lock = Get-Content -Raw -Encoding UTF8 (Join-Path $projectRoot 'assets.lock.json') | ConvertFrom-Json
 foreach ($asset in $lock.assets) {
   $source = [IO.Path]::GetFullPath((Join-Path $projectRoot $asset.source))
+  $destination = [IO.Path]::GetFullPath((Join-Path $projectRoot $asset.destination))
   Assert-True (Test-Path -LiteralPath $source -PathType Leaf) "canonical asset missing: $source"
   $actual = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
   Assert-True ($actual -eq $asset.sha256.ToLowerInvariant()) "asset hash changed: $($asset.source)"
+  Assert-True (Test-Path -LiteralPath $destination -PathType Leaf) "bundled asset missing: $destination"
+  $copied = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+  Assert-True ($copied -eq $actual) "bundled asset differs from canonical source: $($asset.destination)"
 }
 
-$forbidden = Get-ChildItem $projectRoot -Recurse -File -Include *.p12,*.p7b,*.cer,*.profile,signing-config.json5
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+function Get-ArticleCount([string]$Path) {
+  $archive = [IO.Compression.ZipFile]::OpenRead($Path)
+  try {
+    $entry = $archive.GetEntry('manifest.json')
+    Assert-True ($null -ne $entry) "article manifest missing: $Path"
+    $reader = [IO.StreamReader]::new($entry.Open(), [Text.Encoding]::UTF8)
+    try { return (($reader.ReadToEnd() | ConvertFrom-Json).articles | Measure-Object).Count }
+    finally { $reader.Dispose() }
+  } finally { $archive.Dispose() }
+}
+$articleCount = Get-ArticleCount (Join-Path $projectRoot 'entry\src\main\resources\rawfile\bundled.bessarticle')
+$articleCount += Get-ArticleCount (Join-Path $projectRoot 'entry\src\main\resources\rawfile\youtube-bess.bessarticle')
+Assert-True ($articleCount -eq 22) 'the two bundled article packages must contain exactly 22 articles'
+
+$modelsText = Get-Content -Raw -Encoding UTF8 (Join-Path $projectRoot 'entry\src\main\ets\domain\Models.ets')
+$vocabularyText = Get-Content -Raw -Encoding UTF8 (Join-Path $projectRoot 'entry\src\main\ets\data\VocabularyRepositoryImpl.ets')
+$audioText = Get-Content -Raw -Encoding UTF8 (Join-Path $projectRoot 'entry\src\main\ets\data\AudioPlaybackRepositoryImpl.ets')
+$scenarioPageText = Get-Content -Raw -Encoding UTF8 (Join-Path $projectRoot 'entry\src\main\ets\features\scenario\ScenarioPage.ets')
+Assert-True ($modelsText -match 'autoPlayNextArticle:\s*true') 'automatic next article must default to enabled'
+Assert-True ($vocabularyText -match 'vocabulary_aliases') 'vocabulary search must include aliases'
+Assert-True ($vocabularyText -notmatch 'return QuestionMode\.TRANSFER') 'new reviews must never allocate TRANSFER'
+Assert-True ($vocabularyText -match 'review_action_keys') 'review advance must remain idempotent'
+Assert-True ($audioText -match 'setAVQueueItems') 'AVSession queue must be published'
+Assert-True ($audioText -match "session\.on\('playNext'") 'AVSession next event must be handled'
+Assert-True ($audioText -match "session\.on\('playPrevious'") 'AVSession previous event must be handled'
+Assert-True ($scenarioPageText -match 'customerTextZh') 'scenario reveal must include customer Chinese text'
+
+$scanRoots = @('AppScope', 'entry\src', 'docs', 'scripts') | ForEach-Object { Join-Path $projectRoot $_ }
+$forbidden = @(
+  Get-ChildItem $projectRoot -File -Include *.p12,*.p7b,*.cer,*.profile,signing-config.json5
+  foreach ($root in $scanRoots) {
+    Get-ChildItem $root -Recurse -File -Include *.p12,*.p7b,*.cer,*.profile,signing-config.json5
+  }
+)
 Assert-True ($forbidden.Count -eq 0) 'signing certificate, profile, or private material must not be committed'
 
 Write-Host 'HarmonyOS contract checks passed.' -ForegroundColor Green

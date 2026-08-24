@@ -26,6 +26,26 @@ export enum VocabularyAssessment {
   MASTERED = 'MASTERED'
 }
 
+export enum MasteryFilter {
+  ALL = 'ALL',
+  NOT_STARTED = 'NOT_STARTED',
+  LEARNING = 'LEARNING',
+  MASTERED = 'MASTERED'
+}
+
+export interface VocabularyFilter {
+  query: string;
+  mastery: MasteryFilter;
+  dueOnly: boolean;
+  favoritesOnly: boolean;
+  topic: string;
+  cefrLevel: string;
+}
+
+export const DEFAULT_VOCABULARY_FILTER: VocabularyFilter = {
+  query: '', mastery: MasteryFilter.ALL, dueOnly: false, favoritesOnly: false, topic: '', cefrLevel: ''
+};
+
 export enum DialogueSelfRating {
   CANNOT_ANSWER = 'CANNOT_ANSWER',
   BASIC = 'BASIC',
@@ -37,6 +57,18 @@ export interface VocabularyExample {
   textEn: string;
   textZh: string | null;
   audioAssetId: string;
+}
+
+export interface WordMemoryState {
+  fsrsState: FsrsState;
+  difficulty: number;
+  stability: number;
+  dueAtEpochMs: number;
+  reps: number;
+  lapses: number;
+  masteredUi: boolean;
+  lastQuestionMode: QuestionMode | null;
+  isFavorite: boolean;
 }
 
 export interface Vocabulary {
@@ -58,6 +90,7 @@ export interface Vocabulary {
   exampleAudioAssetId: string;
   contentHash: string;
   favorite: boolean;
+  memoryState: WordMemoryState | null;
   itemKind: string;
   aliases: string[];
   examples: VocabularyExample[];
@@ -168,6 +201,7 @@ export interface AppSettings {
   dailyNewWordTarget: number;
   autoPlayCustomerAudio: boolean;
   autoPlayVocabularyAudio: boolean;
+  autoPlayNextArticle: boolean;
   dailyReminderEnabled: boolean;
   dailyReminderHour: number;
   dailyReminderMinute: number;
@@ -179,6 +213,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dailyNewWordTarget: 15,
   autoPlayCustomerAudio: true,
   autoPlayVocabularyAudio: true,
+  autoPlayNextArticle: true,
   dailyReminderEnabled: false,
   dailyReminderHour: 20,
   dailyReminderMinute: 0,
@@ -191,7 +226,30 @@ export interface PlaybackSnapshot {
   positionMs: number;
   durationMs: number;
   speed: number;
+  queueIndex: number;
+  queueSize: number;
+  transition: PlaybackTransition | null;
   errorCode: string | null;
+}
+
+export interface AudioQueueItem {
+  assetId: string;
+  title: string;
+  subtitle: string;
+}
+
+export enum AudioTransitionReason {
+  AUTOMATIC = 'AUTOMATIC',
+  MANUAL_NEXT = 'MANUAL_NEXT',
+  MANUAL_PREVIOUS = 'MANUAL_PREVIOUS',
+  STOPPED = 'STOPPED'
+}
+
+export interface PlaybackTransition {
+  fromAssetId: string | null;
+  toAssetId: string | null;
+  fromPositionMs: number;
+  reason: AudioTransitionReason;
 }
 
 export class DocumentRef {

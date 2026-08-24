@@ -14,8 +14,8 @@ import { ArchiveLimits, safeArchive } from './SafeArchive';
 import { SettingsRepositoryImpl } from './SettingsRepositoryImpl';
 import { utf8 } from './Binary';
 
-const APP_VERSION_NAME = '0.2.2';
-const APP_VERSION_CODE = 4;
+const APP_VERSION_NAME = '0.4.1';
+const APP_VERSION_CODE = 5;
 const BACKUP_LIMITS: ArchiveLimits = {
   maxContainerBytes: MAX_BACKUP_CONTAINER_BYTES,
   maxEntryBytes: 32 * 1024 * 1024 + 64 * 1024,
